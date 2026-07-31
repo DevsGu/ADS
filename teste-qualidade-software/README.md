@@ -36,10 +36,9 @@ Este trabalho tem como objetivo analisar um software Open Source utilizando mét
 
 - Git
 - GitHub
-- SonarQube
-- NodeJs
-- Json Server
-- ChatGPT
+- CodeMr
+- Java
+- SpringBoot
 
 ---
 
