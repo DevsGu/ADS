@@ -1,0 +1,36 @@
+.nav-link {
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: all 0.3s ease;
+}
+
+.nav-link:hover {
+  background-color: rgba(13, 110, 253, 0.1);
+}
+
+.nav-link.active {
+  background-color: white;
+  border-bottom: 3px solid #0d6efd;
+}
+
+.transition-hover {
+  transition: all 0.3s ease;
+}
+
+.transition-hover:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.transition-scale {
+  transition: transform 0.2s ease;
+}
+
+.transition-scale:hover {
+  transform: scale(1.1);
+}
+
+.cards .course-card {
+  background: #fff !important;
+}
