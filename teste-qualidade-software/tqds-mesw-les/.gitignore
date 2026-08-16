@@ -64,3 +64,4 @@ backend/mvnw.cmd
 frontend/coverage
 acceptance-tests/target/
 backend/.env
+/.metadata/
