@@ -1,4 +1,3 @@
-
 # 📊 1. Refatoração e Métricas
 
 > Registro completo das análises de Code Smells, métricas obtidas e refatorações aplicadas.
@@ -6,5 +5,9 @@
 | Nº | Classe | Método / Trecho | Problema Identificado | Métrica Antes | Refatoração Aplicada | Métrica Depois | Commit |
 | :---: | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **1** | `SecurityConfig` | `securityFilterChain` | *Duplicate Code* (`csrf` e rotas redundantes), *Long Parameter List* (5 parâmetros), *Violation of SRP* (CORS e Handlers inline) | **LOC:** 85<br>**CC:** 12<br>**Params:** 5<br>**Dup:** 3 | **Extract Method** (CORS Bean e Handlers), **Constructor Injection**, Consolidação de Rotas | **LOC:** 35<br>**CC:** 3<br>**Params:** 2<br>**Dup:** 0 | `a1b2c3d` |
-| **2** | | | | | | | |
-| **3** | | | | | | | |
+| **2** | `AdminController` | `deleteUniversity` | *In-Memory Filtering* (`findAll().stream()`), *High Memory Footprint* (Carregamento total da tabela em RAM) | **LOC:** 18<br>**CC:** 4<br>**RAM:** O(N)<br>**Query:** N/A | **Replace Stream with Derived Query** (`existsByUniversityId`), deleção checada no BD | **LOC:** 8<br>**CC:** 2<br>**RAM:** O(1)<br>**Query:** 1 (`EXISTS`) | `b2c3d4e` |
+| **3** | `AdminController` | `getAllReviews` | *Null Pointer Risk* (`getUser().getId()` desprotegido), *Violation of Defensive Programming* | **LOC:** 30<br>**CC:** 3<br>**NPE Risk:** Alto | **Defensive Checks** com operadores ternários antes de invocar entidades vinculadas | **LOC:** 30<br>**CC:** 5<br>**NPE Risk:** Nulo | `c3d4e5f` |
+| **4** | `AdminController` | `deleteReview` | *Ambiguous Endpoint* (Colisão de IDs em tabelas distintas de reviews), *Data Integrity Risk* | **LOC:** 10<br>**CC:** 3<br>**Endpoints:** 1 | **Split Endpoint** em rotas explícitas (`/reviews/course/{id}` e `/reviews/university/{id}`) | **LOC:** 16<br>**CC:** 2<br>**Endpoints:** 2 | `d4e5f6a` |
+| **5** | `CourseRepository` | Interface | *Missing Repository Query* (Ausência de derived query para verificação direta no banco) | **Methods:** 2<br>**In-Memory:** Sim | **Add Derived Query** (`existsByUniversityId`), verificação nativa via JPA | **Methods:** 3<br>**In-Memory:** Não | `e5f6a7b` |
+
+---
