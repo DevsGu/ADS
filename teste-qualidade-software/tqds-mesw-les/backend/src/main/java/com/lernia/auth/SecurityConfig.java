@@ -7,159 +7,134 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Configuration
 public class SecurityConfig {
 
-        @Bean
-        public PasswordEncoder passwordEncoder() {
-                return new BCryptPasswordEncoder();
-        }
+    private final CustomOAuth2UserService customOAuth2UserService;
+    private final OAuth2AuthenticationSuccessHandler oauth2AuthenticationSuccessHandler;
 
-        @Bean
-        public SecurityContextRepository securityContextRepository() {
-                return new HttpSessionSecurityContextRepository();
-        }
+    public SecurityConfig(CustomOAuth2UserService customOAuth2UserService,
+                          OAuth2AuthenticationSuccessHandler oauth2AuthenticationSuccessHandler) {
+        this.customOAuth2UserService = customOAuth2UserService;
+        this.oauth2AuthenticationSuccessHandler = oauth2AuthenticationSuccessHandler;
+    }
 
-        @Bean
-        SecurityFilterChain securityFilterChain(
-                        HttpSecurity http,
-                        @Value("${app.cors.allowed-origins:http://localhost:4200}") String corsOrigins,
-                        SecurityContextRepository securityContextRepository,
-                        CustomOAuth2UserService customOAuth2UserService,
-                        OAuth2AuthenticationSuccessHandler oauth2AuthenticationSuccessHandler) throws Exception {
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 
-                http
-                                .csrf(AbstractHttpConfigurer::disable)
-                                .cors(cors -> cors
-                                                .configurationSource(request -> {
-                                                        CorsConfiguration configuration = new CorsConfiguration();
-                                                        List<String> origins = Arrays.stream(corsOrigins.split(","))
-                                                                        .map(String::trim)
-                                                                        .filter(s -> !s.isEmpty())
-                                                                        .collect(Collectors.toList());
-                                                        configuration.setAllowedOriginPatterns(origins);
-                                                        configuration.setAllowedMethods(List.of("GET", "POST", "PUT",
-                                                                        "PATCH", "DELETE", "OPTIONS"));
-                                                        configuration.setAllowedHeaders(List.of("*"));
-                                                        configuration.setAllowCredentials(true);
-                                                        return configuration;
-                                                }))
+    @Bean
+    public SecurityContextRepository securityContextRepository() {
+        return new HttpSessionSecurityContextRepository();
+    }
 
-                                .csrf(AbstractHttpConfigurer::disable)
-                                .logout(logout -> logout
-                                                .logoutUrl("/logout")
-                                                .invalidateHttpSession(true)
-                                                .clearAuthentication(true)
-                                                .deleteCookies("JSESSIONID")
-                                                .logoutSuccessHandler((request, response, authentication) -> {
-                                                        response.setStatus(HttpServletResponse.SC_OK);
-                                                        response.setContentType("application/json");
-                                                        response.getWriter().write(
-                                                                        "{\"message\": \"Logged out successfully\"}");
-                                                }))
-                                .oauth2Login(oauth2 -> oauth2
-                                                .userInfoEndpoint(userInfo -> userInfo
-                                                                .userService(customOAuth2UserService))
-                                                .successHandler(oauth2AuthenticationSuccessHandler))
-                                .exceptionHandling(exceptions -> exceptions
-                                                .authenticationEntryPoint((request, response, authException) -> {
-                                                        // For API requests, return 401 instead of redirecting to OAuth
-                                                        String requestUri = request.getRequestURI();
-                                                        if (requestUri.startsWith("/api/")) {
-                                                                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                                                                response.setContentType("application/json");
-                                                                response.getWriter().write(
-                                                                                "{\"error\": \"Unauthorized\", \"message\": \"Please log in first\"}");
-                                                        } else {
-                                                                // For non-API requests, allow default OAuth redirect
-                                                                response.sendRedirect("/oauth2/authorization/google");
-                                                        }
-                                                }))
-                                .securityContext(
-                                                context -> context.securityContextRepository(securityContextRepository))
-                                .authorizeHttpRequests(auth -> auth
-                                                // Preflight CORS
-                                                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origins:http://localhost:4200}") String corsOrigins) {
+        CorsConfiguration configuration = new CorsConfiguration();
+        List<String> origins = Arrays.stream(corsOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
 
-                                                // Login / Register / Logout públicos
-                                                .requestMatchers(HttpMethod.POST, "/login", "/register", "/logout")
-                                                .permitAll()
-                                                .requestMatchers(HttpMethod.GET, "/login").permitAll()
-                                                .requestMatchers(HttpMethod.POST, "api/auth/password/forgot",
-                                                                "api/auth/password/reset")
-                                                .permitAll()
+        configuration.setAllowedOriginPatterns(origins);
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowCredentials(true);
 
-                                                // OAuth2 endpoints
-                                                .requestMatchers("/oauth2/**", "/login/oauth2/code/**").permitAll()
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
 
-                                                // Delete account (requires auth)
-                                                .requestMatchers(HttpMethod.DELETE, "/api/profile/delete/**")
-                                                .authenticated()
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, 
+                                                   SecurityContextRepository securityContextRepository) throws Exception {
+        http
+            .csrf(AbstractHttpConfigurer::disable)
+            .cors(cors -> cors.configurationSource(corsConfigurationSource(null)))
+            .logout(logout -> logout
+                .logoutUrl("/logout")
+                .invalidateHttpSession(true)
+                .clearAuthentication(true)
+                .deleteCookies("JSESSIONID")
+                .logoutSuccessHandler(customLogoutSuccessHandler())
+            )
+            .oauth2Login(oauth2 -> oauth2
+                .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
+                .successHandler(oauth2AuthenticationSuccessHandler)
+            )
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(customAuthenticationEntryPoint())
+            )
+            .securityContext(context -> context.securityContextRepository(securityContextRepository))
+            .authorizeHttpRequests(auth -> auth
+                // Rotas Públicas
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/login", "/register", "/logout", "/api/auth/password/forgot", "/api/auth/password/reset").permitAll()
+                .requestMatchers(HttpMethod.GET, "/login").permitAll()
+                .requestMatchers("/oauth2/**", "/login/oauth2/code/**").permitAll()
+                .requestMatchers("/api/favorites/**", "/api/favorites", "/api/auth/me", "/api/auth/logout", "/api/users/**").permitAll()
+                .requestMatchers(HttpMethod.GET,
+                    "/api/profile/**",
+                    "/api/courses/**",
+                    "/api/university/**",
+                    "/api/area-of-study",
+                    "/api/reviews/**",
+                    "/api/scholarship/**"
+                ).permitAll()
+                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/api/admin/**").permitAll()
 
-                                                // Profile updates (requires auth)
-                                                .requestMatchers(HttpMethod.PUT, "/api/profile/**").authenticated()
-                                                .requestMatchers(HttpMethod.PATCH, "/api/profile/**").authenticated()
+                // Rotas Autenticadas
+                .requestMatchers(HttpMethod.DELETE, "/api/profile/delete/**", "/api/subscriptions").authenticated()
+                .requestMatchers(HttpMethod.PUT, "/api/profile/**").authenticated()
+                .requestMatchers(HttpMethod.PATCH, "/api/profile/**").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/subscriptions").authenticated()
+                .requestMatchers(HttpMethod.GET, "/api/users/me/status", "/api/recommendations").authenticated()
+                .anyRequest().authenticated()
+            );
 
-                                                // Favoritos (GET/POST/DELETE)
-                                                .requestMatchers("/api/favorites/**").permitAll()
-                                                .requestMatchers("/api/favorites").permitAll()
+        return http.build();
+    }
 
-                                                // Endpoint de sessão e logout para o frontend
-                                                .requestMatchers("/api/auth/me", "/api/auth/logout").permitAll()
-                                                .requestMatchers("/api/users/**").permitAll()
+    private LogoutSuccessHandler customLogoutSuccessHandler() {
+        return (request, response, authentication) -> 
+            writeJsonResponse(response, HttpServletResponse.SC_OK, "{\"message\": \"Logged out successfully\"}");
+    }
 
-                                                // Preflight CORS
-                                                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+    private AuthenticationEntryPoint customAuthenticationEntryPoint() {
+        return (request, response, authException) -> {
+            if (request.getRequestURI().startsWith("/api/")) {
+                writeJsonResponse(response, HttpServletResponse.SC_UNAUTHORIZED, 
+                    "{\"error\": \"Unauthorized\", \"message\": \"Please log in first\"}");
+            } else {
+                response.sendRedirect("/oauth2/authorization/google");
+            }
+        };
+    }
 
-                                                // Endpoint de sessão e logout para o frontend
-                                                .requestMatchers("/api/auth/me", "/api/auth/logout").permitAll()
-
-                                                // Endpoints GET públicos
-                                                .requestMatchers(HttpMethod.GET,
-                                                                "/api/profile/**",
-                                                                "/api/courses",
-                                                                "/api/courses/**",
-                                                                "/api/university/**",
-                                                                "/api/university",
-                                                                "/api/area-of-study",
-                                                                "/api/reviews/**",
-                                                                "/api/scholarship/**")
-                                                .permitAll()
-
-                                                // Subscription endpoints (require auth)
-                                                .requestMatchers(HttpMethod.POST, "/api/subscriptions").authenticated()
-                                                .requestMatchers(HttpMethod.DELETE, "/api/subscriptions")
-                                                .authenticated()
-                                                .requestMatchers(HttpMethod.GET, "/api/users/me/status").authenticated()
-
-                                                // Recommendations endpoint (require auth, premium check in controller)
-                                                .requestMatchers(HttpMethod.GET, "/api/recommendations").authenticated()
-
-                                                // Admin endpoints require ADMIN role
-                                                .requestMatchers("/api/admin/**").permitAll()
-                                                // TODO: .requestMatchers("/api/admin/**").hasRole("ADMIN")
-
-                                                // Swagger
-                                                .requestMatchers(
-                                                                "/v3/api-docs/**",
-                                                                "/swagger-ui/**",
-                                                                "/swagger-ui.html")
-                                                .permitAll()
-
-                                                .anyRequest().authenticated());
-                return http.build();
-        }
+    private void writeJsonResponse(HttpServletResponse response, int status, String jsonBody) throws IOException {
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.getWriter().write(jsonBody);
+    }
 }
