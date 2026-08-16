@@ -5,5 +5,5 @@
 | Nº | Prompt Resumido | Sugestão da IA | Decisão | Justificativa |
 | :---: | :--- | :--- | :--- | :--- |
 | **1** | Analisar e refatorar `SecurityConfig` identificando Code Smells e gerando métricas comparativas | Extração de Bean para CORS, injeção de dependências por construtor, isolamento de Handlers em métodos privados e eliminação de rotas/configurações duplicadas | Aceito | Reduziu a complexidade ciclomática de 12 para 3 (-75%), eliminou código duplicado e aplicou SRP, tornando a configuração de segurança limpa e de fácil manutenção |
-| **2** | | | | |
-| **3** | | | | |
+| **2** | Refatorar `AdminController` para eliminar gargalo de memória, prevenir NPEs e resolver ambiguidade de endpoints | Substituir filtragem em memória (`stream().anyMatch`) por verificação direta no repositório, adicionar checagens defensivas para nulos e desacoplar o endpoint `/reviews/{id}` em duas rotas explícitas | Aceito | Elimina o carregamento O(N) de entidades na RAM, zera o risco de `NullPointerException` ao acessar relacionamentos e previne a deleção incorreta de dados entre tabelas distintas |
+| **3** | Ajustar `CourseRepository` para suportar a verificação otimizada de vínculo de universidade | Adicionar a derived query `boolean existsByUniversityId(Long universityId)` estendendo o `JpaRepository` | Aceito | Delega a verificação de existência diretamente ao banco de dados através de uma query `EXISTS` otimizada, eliminando a transferência de dados desnecessária para a aplicação |
