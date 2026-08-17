@@ -1,9 +1,9 @@
 package com.lernia.auth.service;
 
 import com.lernia.auth.dto.CourseLightDTO;
-import com.lernia.auth.dto.response.FavoritesResponse;
 import com.lernia.auth.dto.LocationDTO;
 import com.lernia.auth.dto.UniversityDTOLight;
+import com.lernia.auth.dto.response.FavoritesResponse;
 import com.lernia.auth.entity.CourseEntity;
 import com.lernia.auth.entity.LocationEntity;
 import com.lernia.auth.entity.UniversityEntity;
@@ -11,100 +11,95 @@ import com.lernia.auth.entity.UserEntity;
 import com.lernia.auth.repository.CourseRepository;
 import com.lernia.auth.repository.UniversityRepository;
 import com.lernia.auth.repository.UserRepository;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.HttpStatus;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class FavoritesService {
 
     private final UserRepository userRepository;
     private final CourseRepository courseRepository;
     private final UniversityRepository universityRepository;
 
-    private UserEntity findUserById(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "User not found: " + userId));
-    }
-
     // ------------- COURSES -------------
 
+    @Transactional
     public void addCourseToFavorites(Long userId, Long courseId) {
         UserEntity user = findUserById(userId);
         CourseEntity course = courseRepository.findById(courseId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Course not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Course not found with id: " + courseId));
 
         if (!user.getBookmarkedCourses().contains(course)) {
             user.getBookmarkedCourses().add(course);
-            userRepository.save(user);
         }
     }
 
+    @Transactional
     public void removeCourseFromFavorites(Long userId, Long courseId) {
         UserEntity user = findUserById(userId);
         user.getBookmarkedCourses().removeIf(c -> c.getId().equals(courseId));
-        userRepository.save(user);
     }
 
     // ------------- UNIVERSITIES -------------
 
+    @Transactional
     public void addUniversityToFavorites(Long userId, Long universityId) {
         UserEntity user = findUserById(userId);
         UniversityEntity uni = universityRepository.findById(universityId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "University not found"));
+                .orElseThrow(() -> new EntityNotFoundException("University not found with id: " + universityId));
 
         if (!user.getBookmarkedUniversities().contains(uni)) {
             user.getBookmarkedUniversities().add(uni);
-            userRepository.save(user);
         }
     }
 
+    @Transactional
     public void removeUniversityFromFavorites(Long userId, Long universityId) {
         UserEntity user = findUserById(userId);
         user.getBookmarkedUniversities().removeIf(u -> u.getId().equals(universityId));
-        userRepository.save(user);
     }
 
     // ------------- LISTAR FAVORITOS DO USER -------------
 
+    @Transactional(readOnly = true)
     public FavoritesResponse getFavoritesForUser(Long userId) {
         UserEntity user = findUserById(userId);
 
         List<UniversityDTOLight> uniDtos = user.getBookmarkedUniversities().stream()
                 .sorted(Comparator.comparing(UniversityEntity::getId).reversed())
                 .map(this::toUniversityLight)
-                .collect(Collectors.toList());
+                .toList();
 
         List<CourseLightDTO> courseDtos = user.getBookmarkedCourses().stream()
                 .sorted(Comparator.comparing(CourseEntity::getId).reversed())
                 .map(this::toCourseLight)
-                .collect(Collectors.toList());
+                .toList();
 
         return new FavoritesResponse(uniDtos, courseDtos);
     }
 
-    // ------------- HELPERS DE MAPEAMENTO -------------
+    // ------------- HELPERS PRIVADOS DE DOMÍNIO E MAPEAMENTO -------------
+
+    private UserEntity findUserById(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+    }
 
     private UniversityDTOLight toUniversityLight(UniversityEntity university) {
-        LocationDTO locationDTO = null;
-        LocationEntity loc = university.getLocation();
-        if (loc != null) {
-            locationDTO = new LocationDTO(
-                    loc.getId(),
-                    loc.getCity(),
-                    loc.getCountry(),
-                    loc.getCostOfLiving());
-        }
+        LocationDTO locationDTO = Optional.ofNullable(university.getLocation())
+                .map(loc -> new LocationDTO(
+                        loc.getId(),
+                        loc.getCity(),
+                        loc.getCountry(),
+                        loc.getCostOfLiving()))
+                .orElse(null);
 
         return new UniversityDTOLight(
                 university.getId(),
@@ -114,10 +109,9 @@ public class FavoritesService {
     }
 
     private CourseLightDTO toCourseLight(CourseEntity course) {
-        String universityName = null;
-        if (course.getUniversity() != null) {
-            universityName = course.getUniversity().getName();
-        }
+        String universityName = Optional.ofNullable(course.getUniversity())
+                .map(UniversityEntity::getName)
+                .orElse(null);
 
         return new CourseLightDTO(
                 course.getId(),
