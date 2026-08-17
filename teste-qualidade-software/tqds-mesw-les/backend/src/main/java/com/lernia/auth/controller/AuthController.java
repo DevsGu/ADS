@@ -70,7 +70,13 @@ public class AuthController {
         response.setUsername(user.getUsername());
         response.setName(user.getName());
         response.setEmail(user.getEmail());
+        response.setAge(user.getAge());
+        response.setGender(user.getGender());
+        response.setLocation(user.getLocation());
+        response.setJobTitle(user.getJobTitle());
         response.setUserRole(user.getUserRole() != null ? user.getUserRole().name() : null);
+        response.setProvider(user.getProvider() != null ? user.getProvider().name() : "LOCAL");
+        response.setPremium(user.getUserRole() != null && "PREMIUM".equals(user.getUserRole().name()));
 
         return ResponseEntity.ok(response);
     }
