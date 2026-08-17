@@ -5,7 +5,8 @@ import com.lernia.auth.entity.*;
 import com.lernia.auth.repository.CourseRepository;
 import com.lernia.auth.repository.UniversityRepository;
 import com.lernia.auth.repository.UserRepository;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,30 +14,23 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class RecommendationService {
 
     private final UserRepository userRepository;
     private final CourseRepository courseRepository;
     private final UniversityRepository universityRepository;
 
-    public RecommendationService(UserRepository userRepository,
-            CourseRepository courseRepository,
-            UniversityRepository universityRepository) {
-        this.userRepository = userRepository;
-        this.courseRepository = courseRepository;
-        this.universityRepository = universityRepository;
-    }
-
     @Transactional(readOnly = true)
     public List<SuggestionResponseDTO> getRecommendations(Long userId) {
         UserEntity user = userRepository.findById(userId)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
 
-        List<CourseEntity> bookmarkedCourses = user.getBookmarkedCourses();
-        List<UniversityEntity> bookmarkedUniversities = user.getBookmarkedUniversities();
+        List<CourseEntity> bookmarkedCourses = Optional.ofNullable(user.getBookmarkedCourses()).orElseGet(Collections::emptyList);
+        List<UniversityEntity> bookmarkedUniversities = Optional.ofNullable(user.getBookmarkedUniversities()).orElseGet(Collections::emptyList);
         String userLocation = user.getLocation();
 
-        // Collect user preferences
+        // Mapeamento das preferências do usuário em memória
         Set<Long> bookmarkedCourseIds = bookmarkedCourses.stream()
                 .map(CourseEntity::getId)
                 .collect(Collectors.toSet());
@@ -46,6 +40,7 @@ public class RecommendationService {
                 .collect(Collectors.toSet());
 
         Set<Long> preferredAreaIds = bookmarkedCourses.stream()
+                .filter(c -> c.getAreasOfStudy() != null)
                 .flatMap(c -> c.getAreasOfStudy().stream())
                 .map(AreaOfStudyEntity::getId)
                 .collect(Collectors.toSet());
@@ -60,91 +55,87 @@ public class RecommendationService {
                 .map(c -> c.getUniversity().getId())
                 .collect(Collectors.toSet());
 
-        // Score all courses
+        // Prepara os países das universidades favoritadas em memória (Elimina o problema N+1)
+        Set<String> preferredCountries = bookmarkedUniversities.stream()
+                .map(UniversityEntity::getLocation)
+                .filter(Objects::nonNull)
+                .map(LocationEntity::getCountry)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
         List<ScoredItem> scoredItems = new ArrayList<>();
 
-        List<CourseEntity> allCourses = courseRepository.findAll();
-        for (CourseEntity course : allCourses) {
-            // Skip already bookmarked courses
+        // Avalia cursos não favoritados
+        for (CourseEntity course : courseRepository.findAll()) {
             if (bookmarkedCourseIds.contains(course.getId())) {
                 continue;
             }
-
-            double score = calculateCourseScore(course, preferredAreaIds, preferredCourseTypes,
-                    preferredUniversityIds, userLocation);
-
+            double score = calculateCourseScore(course, preferredAreaIds, preferredCourseTypes, preferredUniversityIds, userLocation);
             if (score > 0) {
                 scoredItems.add(new ScoredItem(course.getId(), "course", score, course));
             }
         }
 
-        // Score all universities
-        List<UniversityEntity> allUniversities = universityRepository.findAll();
-        for (UniversityEntity university : allUniversities) {
-            // Skip already bookmarked universities
+        // Avalia universidades não favoritadas
+        for (UniversityEntity university : universityRepository.findAll()) {
             if (bookmarkedUniversityIds.contains(university.getId())) {
                 continue;
             }
-
-            double score = calculateUniversityScore(university, preferredUniversityIds,
-                    bookmarkedCourses, userLocation);
-
+            double score = calculateUniversityScore(university, preferredCountries, userLocation);
             if (score > 0) {
                 scoredItems.add(new ScoredItem(university.getId(), "university", score, university));
             }
         }
 
-        // If no preferences exist, return popular items
+        // Fallback para itens populares caso o usuário não possua recomendações por score
         if (scoredItems.isEmpty() || preferredAreaIds.isEmpty()) {
             return getPopularItems();
         }
 
-        // Sort by score descending and take top 10
+        // Ordena por score decrescente e limita às 10 melhores sugestões
         return scoredItems.stream()
-                .sorted((a, b) -> Double.compare(b.score, a.score))
+                .sorted(Comparator.comparingDouble((ScoredItem item) -> item.score).reversed())
                 .limit(10)
                 .map(this::toDTO)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     private double calculateCourseScore(CourseEntity course,
-            Set<Long> preferredAreaIds,
-            Set<String> preferredCourseTypes,
-            Set<Long> preferredUniversityIds,
-            String userLocation) {
+                                       Set<Long> preferredAreaIds,
+                                       Set<String> preferredCourseTypes,
+                                       Set<Long> preferredUniversityIds,
+                                       String userLocation) {
         double score = 0;
 
-        // Area of Study match (+30)
-        Set<Long> courseAreaIds = course.getAreasOfStudy().stream()
-                .map(AreaOfStudyEntity::getId)
-                .collect(Collectors.toSet());
-
-        if (!Collections.disjoint(courseAreaIds, preferredAreaIds)) {
-            score += 30;
+        // Correspondência de Área de Estudo (+30)
+        if (course.getAreasOfStudy() != null) {
+            Set<Long> courseAreaIds = course.getAreasOfStudy().stream()
+                    .map(AreaOfStudyEntity::getId)
+                    .collect(Collectors.toSet());
+            if (!Collections.disjoint(courseAreaIds, preferredAreaIds)) {
+                score += 30;
+            }
         }
 
-        // Location preference (+25)
-        if (userLocation != null && course.getUniversity() != null
-                && course.getUniversity().getLocation() != null) {
-            String courseLocation = course.getUniversity().getLocation().getCountry();
-            if (courseLocation != null &&
-                    (userLocation.toLowerCase().contains(courseLocation.toLowerCase()) ||
-                            courseLocation.toLowerCase().contains(userLocation.toLowerCase()))) {
+        // Correspondência de Localização/País (+25)
+        if (userLocation != null && course.getUniversity() != null && course.getUniversity().getLocation() != null) {
+            String courseCountry = course.getUniversity().getLocation().getCountry();
+            if (courseCountry != null && isLocationMatching(userLocation, courseCountry)) {
                 score += 25;
             }
         }
 
-        // Course type match (+20)
-        if (preferredCourseTypes.contains(course.getCourseType())) {
+        // Correspondência do Tipo de Curso (+20)
+        if (course.getCourseType() != null && preferredCourseTypes.contains(course.getCourseType())) {
             score += 20;
         }
 
-        // University connection (+15)
+        // Conexão com Universidade preferida (+15)
         if (course.getUniversity() != null && preferredUniversityIds.contains(course.getUniversity().getId())) {
             score += 15;
         }
 
-        // Popularity bonus based on being remote/accessible (+5)
+        // Bônus para cursos remotos/EAD (+5)
         if (Boolean.TRUE.equals(course.getIsRemote())) {
             score += 5;
         }
@@ -153,120 +144,87 @@ public class RecommendationService {
     }
 
     private double calculateUniversityScore(UniversityEntity university,
-            Set<Long> preferredUniversityIds,
-            List<CourseEntity> bookmarkedCourses,
-            String userLocation) {
+                                          Set<String> preferredCountries,
+                                          String userLocation) {
         double score = 0;
 
-        // Location match (+25)
-        if (userLocation != null && university.getLocation() != null) {
-            String uniLocation = university.getLocation().getCountry();
-            if (uniLocation != null && (userLocation.toLowerCase().contains(uniLocation.toLowerCase()) ||
-                    uniLocation.toLowerCase().contains(userLocation.toLowerCase()))) {
+        if (university.getLocation() != null && university.getLocation().getCountry() != null) {
+            String country = university.getLocation().getCountry();
+
+            // Match de localização com o perfil do usuário (+25)
+            if (userLocation != null && isLocationMatching(userLocation, country)) {
                 score += 25;
             }
-        }
 
-        // Similar universities in same location as bookmarked universities
-        if (preferredUniversityIds.stream()
-                .anyMatch(id -> {
-                    UniversityEntity bookmarked = universityRepository.findById(id).orElse(null);
-                    return bookmarked != null && bookmarked.getLocation() != null
-                            && university.getLocation() != null
-                            && Objects.equals(bookmarked.getLocation().getCountry(),
-                                    university.getLocation().getCountry());
-                })) {
-            score += 20;
+            // Match com países de universidades previamente favoritadas (+20)
+            if (preferredCountries.contains(country)) {
+                score += 20;
+            }
         }
 
         return score;
     }
 
+    private boolean isLocationMatching(String loc1, String loc2) {
+        String l1 = loc1.toLowerCase();
+        String l2 = loc2.toLowerCase();
+        return l1.contains(l2) || l2.contains(l1);
+    }
+
     private List<SuggestionResponseDTO> getPopularItems() {
-        // Return top courses and universities as fallback
         List<SuggestionResponseDTO> popular = new ArrayList<>();
 
-        // Get first 5 courses
         courseRepository.findAll().stream()
                 .limit(5)
-                .map(course -> {
-                    SuggestionResponseDTO dto = new SuggestionResponseDTO();
-                    dto.setId(course.getId());
-                    dto.setTitle(course.getName());
-                    dto.setDescription(course.getDescription());
-                    dto.setType("course");
-                    dto.setMatchScore(50.0); // Default score for popular items
-                    dto.setCourseType(course.getCourseType());
-                    if (course.getUniversity() != null) {
-                        dto.setUniversityName(course.getUniversity().getName());
-                        if (course.getUniversity().getLocation() != null) {
-                            dto.setLocation(course.getUniversity().getLocation().getCountry());
-                        }
-                    }
-                    return dto;
-                })
+                .map(course -> mapToDTO(course.getId(), course.getName(), course.getDescription(),
+                        "course", 50.0, course.getCourseType(), course.getUniversity()))
                 .forEach(popular::add);
 
-        // Get first 5 universities
         universityRepository.findAll().stream()
                 .limit(5)
-                .map(uni -> {
-                    SuggestionResponseDTO dto = new SuggestionResponseDTO();
-                    dto.setId(uni.getId());
-                    dto.setTitle(uni.getName());
-                    dto.setDescription(uni.getDescription());
-                    dto.setType("university");
-                    dto.setMatchScore(50.0);
-                    if (uni.getLocation() != null) {
-                        dto.setLocation(uni.getLocation().getCountry());
-                    }
-                    return dto;
-                })
+                .map(uni -> mapToDTO(uni.getId(), uni.getName(), uni.getDescription(),
+                        "university", 50.0, null, uni))
                 .forEach(popular::add);
 
         return popular;
     }
 
     private SuggestionResponseDTO toDTO(ScoredItem item) {
-        SuggestionResponseDTO dto = new SuggestionResponseDTO();
-        dto.setId(item.id);
-        dto.setType(item.type);
-        dto.setMatchScore(Math.min(item.score, 100)); // Cap at 100
-
         if ("course".equals(item.type)) {
             CourseEntity course = (CourseEntity) item.entity;
-            dto.setTitle(course.getName());
-            dto.setDescription(course.getDescription());
-            dto.setCourseType(course.getCourseType());
-            if (course.getUniversity() != null) {
-                dto.setUniversityName(course.getUniversity().getName());
-                if (course.getUniversity().getLocation() != null) {
-                    dto.setLocation(course.getUniversity().getLocation().getCountry());
-                }
-            }
+            return mapToDTO(course.getId(), course.getName(), course.getDescription(),
+                    "course", Math.min(item.score, 100), course.getCourseType(), course.getUniversity());
         } else {
             UniversityEntity university = (UniversityEntity) item.entity;
-            dto.setTitle(university.getName());
-            dto.setDescription(university.getDescription());
-            if (university.getLocation() != null) {
-                dto.setLocation(university.getLocation().getCountry());
+            return mapToDTO(university.getId(), university.getName(), university.getDescription(),
+                    "university", Math.min(item.score, 100), null, university);
+        }
+    }
+
+    private SuggestionResponseDTO mapToDTO(Long id, String title, String description, String type,
+                                          double matchScore, String courseType, Object entity) {
+        SuggestionResponseDTO dto = new SuggestionResponseDTO();
+        dto.setId(id);
+        dto.setTitle(title);
+        dto.setDescription(description);
+        dto.setType(type);
+        dto.setMatchScore(matchScore);
+        dto.setCourseType(courseType);
+
+        if (entity instanceof UniversityEntity uni) {
+            dto.setUniversityName(uni.getName());
+            if (uni.getLocation() != null) {
+                dto.setLocation(uni.getLocation().getCountry());
+            }
+        } else if (entity instanceof CourseEntity course && course.getUniversity() != null) {
+            dto.setUniversityName(course.getUniversity().getName());
+            if (course.getUniversity().getLocation() != null) {
+                dto.setLocation(course.getUniversity().getLocation().getCountry());
             }
         }
 
         return dto;
     }
 
-    private static class ScoredItem {
-        Long id;
-        String type;
-        double score;
-        Object entity;
-
-        ScoredItem(Long id, String type, double score, Object entity) {
-            this.id = id;
-            this.type = type;
-            this.score = score;
-            this.entity = entity;
-        }
-    }
+    private record ScoredItem(Long id, String type, double score, Object entity) {}
 }
