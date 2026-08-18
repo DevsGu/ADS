@@ -3,6 +3,8 @@ package com.example.spring.Entities;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -12,10 +14,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
-
-// Substitua pelo pacote correto
-
-// Importações necessárias
 
 @Entity
 public class Curso {
@@ -47,15 +45,16 @@ public class Curso {
 
   @ManyToOne
   @JoinColumn(name = "instrutor_id", nullable = false)
+  @JsonManagedReference("instrutor-curso") // Gerencia a referência com o Instrutor
   private Instrutor instrutor;
 
-  // Coleção de aulas associadas ao curso
   @OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
+  @JsonManagedReference("curso-aula") // Gerencia a coleção de Aulas
   private List<Aula> aulas = new ArrayList<>();
 
+  public Curso() {
+  }
 
-
-  
   public Curso(Long id, String titulo, String descricao, Double cargaHoraria, Double preco, String nivel, String url,
         String status, Instrutor instrutor, List<Aula> aulas) {
     this.id = id;
@@ -68,9 +67,6 @@ public class Curso {
     this.status = status;
     this.instrutor = instrutor;
     this.aulas = aulas;
-}
-
-  public Curso() {
   }
 
   public Long getId() {
@@ -152,7 +148,4 @@ public class Curso {
   public void setAulas(List<Aula> aulas) {
     this.aulas = aulas;
   }
-
-  
-
 }
