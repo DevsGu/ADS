@@ -12,7 +12,7 @@ import com.example.spring.Entities.Instrutor;
 public interface AulaRepository
         extends JpaRepository<Aula, Long> {
 
-            List<Instrutor> findByNomeContaining(String nome);
+        List<Aula> findByTituloContaining(String titulo);   
 
 
 }
