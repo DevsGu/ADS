@@ -2,14 +2,14 @@ package com.lernia.auth.service;
 
 import com.lernia.auth.dto.AreaOfStudyDTO;
 import com.lernia.auth.dto.CourseDTO;
-import com.lernia.auth.dto.filter.CourseFilter;
 import com.lernia.auth.dto.LocationDTO;
 import com.lernia.auth.dto.UniversityDTOLight;
+import com.lernia.auth.dto.filter.CourseFilter;
 import com.lernia.auth.entity.AreaOfStudyEntity;
 import com.lernia.auth.entity.CourseEntity;
+import com.lernia.auth.entity.CurricularUnitEntity;
 import com.lernia.auth.entity.LocationEntity;
 import com.lernia.auth.entity.UniversityEntity;
-import com.lernia.auth.entity.CurricularUnitEntity;
 import com.lernia.auth.repository.CourseRepository;
 import com.lernia.auth.repository.CourseSpecification;
 import lombok.RequiredArgsConstructor;
@@ -17,12 +17,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CourseService {
 
     private final CourseRepository courseRepository;
@@ -36,16 +39,27 @@ public class CourseService {
                 .map(this::convertToDTO);
     }
 
+    public Page<CourseDTO> getCourses(CourseFilter filter, Pageable pageable) {
+        Specification<CourseEntity> spec = CourseSpecification.filter(filter);
+        return courseRepository.findAll(spec, pageable)
+                .map(this::convertToDTO);
+    }
+
     private CourseDTO convertToDTO(CourseEntity course) {
-        UniversityDTOLight universityDTOLight = getUniversityDTOLight(course);
+        UniversityDTOLight universityDTO = getUniversityDTOLight(course.getUniversity());
 
-        List<AreaOfStudyDTO> areasOfStudy = course.getAreasOfStudy().stream()
-                .map(this::getAreaOfStudyDTO).toList();
+        List<AreaOfStudyDTO> areasOfStudy = Optional.ofNullable(course.getAreasOfStudy())
+                .orElse(Collections.emptyList())
+                .stream()
+                .map(this::getAreaOfStudyDTO)
+                .toList();
 
-        List<String> topics = course.getCurricularUnits().stream()
+        List<String> topics = Optional.ofNullable(course.getCurricularUnits())
+                .orElse(Collections.emptyList())
+                .stream()
                 .map(CurricularUnitEntity::getName)
                 .distinct()
-                .toList();        
+                .toList();
 
         return new CourseDTO(
                 course.getId(),
@@ -62,35 +76,24 @@ public class CourseService {
                 course.getApplicationDeadline(),
                 course.getWebsite(),
                 course.getContactEmail(),
-                universityDTOLight,
+                universityDTO,
                 areasOfStudy,
                 topics
         );
-
     }
 
-    public Page<CourseDTO> getCourses(CourseFilter filter, Pageable pageable) {
-        Specification<CourseEntity> spec = CourseSpecification.filter(filter);
+    private UniversityDTOLight getUniversityDTOLight(UniversityEntity university) {
+        if (university == null) {
+            return null;
+        }
 
-        return courseRepository.findAll(spec, pageable)
-                .map(this::convertToDTO);
-    }
-
-
-    private static UniversityDTOLight getUniversityDTOLight(CourseEntity course) {
-        UniversityEntity university = course.getUniversity();
         LocationEntity location = university.getLocation();
-
-        LocationDTO locationDTO = null;
-        
-        if (location != null) {
-            locationDTO = new LocationDTO(
+        LocationDTO locationDTO = location != null ? new LocationDTO(
                 location.getId(),
                 location.getCity(),
                 location.getCountry(),
                 location.getCostOfLiving()
-            );
-        }
+        ) : null;
 
         return new UniversityDTOLight(
                 university.getId(),
@@ -101,7 +104,9 @@ public class CourseService {
     }
 
     private AreaOfStudyDTO getAreaOfStudyDTO(AreaOfStudyEntity areaOfStudy) {
-
+        if (areaOfStudy == null) {
+            return null;
+        }
         return new AreaOfStudyDTO(
                 areaOfStudy.getId(),
                 areaOfStudy.getName()

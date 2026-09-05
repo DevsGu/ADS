@@ -1,20 +1,28 @@
 package com.lernia.auth.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
 @Table(name = "universities", schema = "lernia")
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
 public class UniversityEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(nullable = false)
     private String name;
+
     private String description;
     private String contactInfo;
     private String website;
@@ -27,9 +35,11 @@ public class UniversityEntity {
     @JoinColumn(name = "location_id")
     private LocationEntity location;
 
+    @JsonIgnore
     @OneToMany(mappedBy = "university", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CampusEntity> campuses = new ArrayList<>();
+
+    @JsonIgnore
     @OneToMany(mappedBy = "university", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ScholarshipEntity> scholarships = new ArrayList<>();
-
 }

@@ -24,5 +24,7 @@ public interface CourseRepository extends JpaRepository<CourseEntity, Long>, Jpa
     @Query("SELECT DISTINCT c.language FROM CourseEntity c WHERE c.language IS NOT NULL")
     List<String> findDistinctLanguages();
 
+    // Adicionado para permitir a verificação otimizada no AdminService
+    boolean existsByUniversityId(Long universityId);
 
 }

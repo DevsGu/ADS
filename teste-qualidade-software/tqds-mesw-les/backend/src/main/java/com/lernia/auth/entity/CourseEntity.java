@@ -1,9 +1,10 @@
 package com.lernia.auth.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -11,18 +12,19 @@ import java.util.List;
 
 @Entity
 @Table(name = "courses", schema = "lernia")
-@Data
+@Getter
+@Setter
 @NoArgsConstructor
-@AllArgsConstructor
 public class CourseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String name;
-    private String description;
 
+    private String description;
     private String courseType;
 
     private Boolean isRemote;
@@ -44,17 +46,20 @@ public class CourseEntity {
 
     private String website;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "university_id", nullable = false)
     private UniversityEntity university;
 
-    @OneToMany(mappedBy = "course")
+    @JsonIgnore
+    @OneToMany(mappedBy = "course", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CurricularUnitEntity> curricularUnits = new ArrayList<>();
 
+    @JsonIgnore
     @ManyToMany
     @JoinTable(name = "course_area_of_study",
+            schema = "lernia",
             joinColumns = @JoinColumn(name = "course_id"),
             inverseJoinColumns = @JoinColumn(name = "area_of_study_id"))
     private List<AreaOfStudyEntity> areasOfStudy = new ArrayList<>();
 }
-

@@ -1,47 +1,39 @@
 package com.lernia.auth.service;
 
 import com.lernia.auth.dto.ReviewDTO;
+import com.lernia.auth.entity.CourseEntity;
+import com.lernia.auth.entity.CourseReviewEntity;
 import com.lernia.auth.entity.UniversityEntity;
 import com.lernia.auth.entity.UniversityReviewEntity;
 import com.lernia.auth.entity.UserEntity;
-import com.lernia.auth.entity.CourseReviewEntity;
-import com.lernia.auth.entity.CourseEntity;
-import com.lernia.auth.repository.UniversityRepository; 
-import com.lernia.auth.repository.UniversityReviewRepository;
-import com.lernia.auth.repository.UserRepository; 
-import com.lernia.auth.repository.UserCourseRepository;
-import com.lernia.auth.repository.CourseReviewRepository;
 import com.lernia.auth.repository.CourseRepository;
+import com.lernia.auth.repository.CourseReviewRepository;
+import com.lernia.auth.repository.UniversityRepository;
+import com.lernia.auth.repository.UniversityReviewRepository;
+import com.lernia.auth.repository.UserCourseRepository;
+import com.lernia.auth.repository.UserRepository;
 
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ReviewService {
 
     private final UniversityReviewRepository reviewRepository;
     private final CourseReviewRepository courseReviewRepository;
     private final UniversityRepository universityRepository;
-    private final CourseRepository courseRepository; 
+    private final CourseRepository courseRepository;
     private final UserRepository userRepository;
     private final UserCourseRepository userCourseRepository;
-
-    public ReviewService(UniversityReviewRepository reviewRepository,
-                         CourseReviewRepository courseReviewRepository,
-                         UniversityRepository universityRepository,
-                         CourseRepository courseRepository,
-                         UserRepository userRepository,
-                         UserCourseRepository userCourseRepository) {
-        this.reviewRepository = reviewRepository;
-        this.courseReviewRepository = courseReviewRepository;
-        this.universityRepository = universityRepository;
-        this.courseRepository = courseRepository;
-        this.userRepository = userRepository;
-        this.userCourseRepository = userCourseRepository;
-    }
 
     public boolean canUserReview(Long userId, Long universityId) {
         return userCourseRepository.existsByUserIdAndCourse_UniversityId(userId, universityId);
@@ -63,22 +55,22 @@ public class ReviewService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional
     public ReviewDTO addReview(ReviewDTO reviewDTO) {
         if (!canUserReview(reviewDTO.getUserId(), reviewDTO.getUniversityId())) {
-            throw new RuntimeException("User is not eligible to review this university.");
+            throw new IllegalStateException("User is not eligible to review this university.");
         }
+
+        UniversityEntity university = universityRepository.findById(reviewDTO.getUniversityId())
+                .orElseThrow(() -> new EntityNotFoundException("University not found with ID: " + reviewDTO.getUniversityId()));
+        UserEntity user = userRepository.findById(reviewDTO.getUserId())
+                .orElseThrow(() -> new EntityNotFoundException("User not found with ID: " + reviewDTO.getUserId()));
 
         UniversityReviewEntity review = new UniversityReviewEntity();
         review.setRating(reviewDTO.getRating());
         review.setTitle(reviewDTO.getTitle());
         review.setDescription(reviewDTO.getDescription());
         review.setReviewDate(LocalDate.now());
-        
-        UniversityEntity university = universityRepository.findById(reviewDTO.getUniversityId())
-                .orElseThrow(() -> new RuntimeException("University not found"));
-        UserEntity user = userRepository.findById(reviewDTO.getUserId())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
         review.setUniversity(university);
         review.setUser(user);
 
@@ -86,22 +78,22 @@ public class ReviewService {
         return convertToDto(savedReview);
     }
 
+    @Transactional
     public ReviewDTO addCourseReview(ReviewDTO reviewDTO) {
         if (!canUserReviewCourse(reviewDTO.getUserId(), reviewDTO.getCourseId())) {
-            throw new RuntimeException("User is not eligible to review this course.");
+            throw new IllegalStateException("User is not eligible to review this course.");
         }
+
+        CourseEntity course = courseRepository.findById(reviewDTO.getCourseId())
+                .orElseThrow(() -> new EntityNotFoundException("Course not found with ID: " + reviewDTO.getCourseId()));
+        UserEntity user = userRepository.findById(reviewDTO.getUserId())
+                .orElseThrow(() -> new EntityNotFoundException("User not found with ID: " + reviewDTO.getUserId()));
 
         CourseReviewEntity review = new CourseReviewEntity();
         review.setRating(reviewDTO.getRating());
         review.setTitle(reviewDTO.getTitle());
         review.setDescription(reviewDTO.getDescription());
         review.setReviewDate(LocalDate.now());
-
-        CourseEntity course = courseRepository.findById(reviewDTO.getCourseId())
-                .orElseThrow(() -> new RuntimeException("Course not found"));
-        UserEntity user = userRepository.findById(reviewDTO.getUserId())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
         review.setCourse(course);
         review.setUser(user);
 
@@ -109,58 +101,58 @@ public class ReviewService {
         return convertCourseReviewToDto(savedReview);
     }
 
+    @Transactional
     public void deleteReview(Long reviewId, Long userId) {
         UniversityReviewEntity review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("Review not found"));
+                .orElseThrow(() -> new EntityNotFoundException("University review not found with ID: " + reviewId));
 
-        if (!review.getUser().getId().equals(userId)) {
-            throw new RuntimeException("You are not authorized to delete this review.");
-        }
+        validateOwnership(review.getUser(), userId);
 
         reviewRepository.delete(review);
     }
 
+    @Transactional
     public void deleteCourseReview(Long reviewId, Long userId) {
         CourseReviewEntity review = courseReviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("Review not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Course review not found with ID: " + reviewId));
 
-        if (!review.getUser().getId().equals(userId)) {
-            throw new RuntimeException("You are not authorized to delete this review.");
-        }
+        validateOwnership(review.getUser(), userId);
 
         courseReviewRepository.delete(review);
     }
 
+    @Transactional
     public ReviewDTO updateReview(Long reviewId, ReviewDTO reviewDTO, Long userId) {
         UniversityReviewEntity review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("Review not found"));
+                .orElseThrow(() -> new EntityNotFoundException("University review not found with ID: " + reviewId));
 
-        if (!review.getUser().getId().equals(userId)) {
-            throw new RuntimeException("You are not authorized to edit this review.");
-        }
+        validateOwnership(review.getUser(), userId);
 
         review.setRating(reviewDTO.getRating());
         review.setTitle(reviewDTO.getTitle());
         review.setDescription(reviewDTO.getDescription());
 
-        UniversityReviewEntity updatedReview = reviewRepository.save(review);
-        return convertToDto(updatedReview);
+        return convertToDto(review);
     }
 
+    @Transactional
     public ReviewDTO updateCourseReview(Long reviewId, ReviewDTO reviewDTO, Long userId) {
         CourseReviewEntity review = courseReviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("Review not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Course review not found with ID: " + reviewId));
 
-        if (!review.getUser().getId().equals(userId)) {
-            throw new RuntimeException("You are not authorized to edit this review.");
-        }
+        validateOwnership(review.getUser(), userId);
 
         review.setRating(reviewDTO.getRating());
         review.setTitle(reviewDTO.getTitle());
         review.setDescription(reviewDTO.getDescription());
 
-        CourseReviewEntity updatedReview = courseReviewRepository.save(review);
-        return convertCourseReviewToDto(updatedReview);
+        return convertCourseReviewToDto(review);
+    }
+
+    private void validateOwnership(UserEntity reviewUser, Long userId) {
+        if (reviewUser == null || !reviewUser.getId().equals(userId)) {
+            throw new SecurityException("You are not authorized to modify this review.");
+        }
     }
 
     private ReviewDTO convertToDto(UniversityReviewEntity review) {
@@ -170,9 +162,16 @@ public class ReviewService {
         dto.setTitle(review.getTitle());
         dto.setDescription(review.getDescription());
         dto.setReviewDate(review.getReviewDate());
-        dto.setUserId(review.getUser().getId());
-        dto.setUserName(review.getUser().getName());
-        dto.setUniversityId(review.getUniversity().getId());
+
+        Optional.ofNullable(review.getUser()).ifPresent(user -> {
+            dto.setUserId(user.getId());
+            dto.setUserName(user.getName());
+        });
+
+        Optional.ofNullable(review.getUniversity()).ifPresent(university -> 
+            dto.setUniversityId(university.getId())
+        );
+
         return dto;
     }
 
@@ -183,9 +182,16 @@ public class ReviewService {
         dto.setTitle(review.getTitle());
         dto.setDescription(review.getDescription());
         dto.setReviewDate(review.getReviewDate());
-        dto.setUserId(review.getUser().getId());
-        dto.setUserName(review.getUser().getName());
-        dto.setCourseId(review.getCourse().getId());
+
+        Optional.ofNullable(review.getUser()).ifPresent(user -> {
+            dto.setUserId(user.getId());
+            dto.setUserName(user.getName());
+        });
+
+        Optional.ofNullable(review.getCourse()).ifPresent(course -> 
+            dto.setCourseId(course.getId())
+        );
+
         return dto;
     }
 }

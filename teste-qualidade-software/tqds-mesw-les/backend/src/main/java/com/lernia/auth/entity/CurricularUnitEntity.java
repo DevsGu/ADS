@@ -1,30 +1,33 @@
 package com.lernia.auth.entity;
 
-import lombok.Data;
-
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 @Entity
 @Table(name = "curricular_units", schema = "lernia")
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
 public class CurricularUnitEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @ManyToOne
-    @JoinColumn(name = "course_id", nullable = false)
-    private CourseEntity course;
+
+    @Column(nullable = false)
     private String name;
+
     private String description;
     private Integer credits;
     private Integer year;
     private Integer semester;
     private Integer hours;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_id", nullable = false)
+    private CourseEntity course;
 }
